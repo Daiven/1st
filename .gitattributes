@@ -1,22 +1,315 @@
-# Auto detect text files and perform LF normalization
-* text=auto
 
-# Custom for Visual Studio
-*.cs     diff=csharp
-*.sln    merge=union
-*.csproj merge=union
-*.vbproj merge=union
-*.fsproj merge=union
-*.dbproj merge=union
+#include "stdafx.h"
+#include <fstream>
+#include <iostream>
+#include <conio.h>
+#include <queue>
+using namespace std;
 
-# Standard to msysgit
-*.doc	 diff=astextplain
-*.DOC	 diff=astextplain
-*.docx diff=astextplain
-*.DOCX diff=astextplain
-*.dot  diff=astextplain
-*.DOT  diff=astextplain
-*.pdf  diff=astextplain
-*.PDF	 diff=astextplain
-*.rtf	 diff=astextplain
-*.RTF	 diff=astextplain
+
+/// 1) входная информация - матрица, в которой элементы могут принимать два значения: значение 0 означает, что клетка шахматной доски свободна; значение 1 означает, что клетка шахматной доски занята;
+/// 2) каждый элемент матрицы соотносится с вершиной графа;
+///           при этом каждую вершину графа окружает восемь соседних вершин (если соответствующая клетка доски внутренняя), или, соответственно, пять соседних вершин или три соседние вершины;
+/// 3) на основе входной матрицы строится таблица смежности, которая описывает связи вершины графа с соседними вершинами,
+///           каждая строка таблица смежности описывает связи одной вершины графа:         
+///                 первый элемент строки содержит номер вершины графа - двузначное число, которое строится на основе индексов i, j матрицы;
+///                 последующие восемь элементов строки содержат либо число (-1), если связи с соответствующей вершиной нет; либо номер соседней вершины графа, если связь с ней есть (т.е. соответствующая соседняя клетка свободна);
+///                 десятый элемент строки содержит количество значимых связей для текущей вершины графа;
+/// 4) исчисление кратчайшего расстояния и построение соответствующего пути осуществляется с помощью алгоритма "обхода графа в ширину"
+
+struct us             // структура "узел" описывает вершину графа
+{
+	int number;       //  номер вершины графа  
+	int prev_us;      //  номер вершины графа, из которой шагнули в текущую вершину
+	int path_number;  //  номер пути 
+	int step_number;  //  длина пути 
+};
+
+
+// массив отражает все возможные расстояния найденных путей
+int pathes[100][10000];  // номер строки - номер шага (длина пути); номер столбца - номер пути;
+
+queue<us> que;
+int spisok[100];
+us pea;
+us buf;
+
+us beg;            // исходная вершина графа - узел, из которого начинается путь
+
+us need;           // конечная вершина графа - узел, в который необходимо прийти
+
+void traverse(int raz);                         // функция обхода
+int **tsmej;                                           // матрица смежности = таблица смежности
+
+
+
+int n = 0;                                            // номер 
+int path_number = 0;                                  // номер пути 
+int flag_stop = 0;
+int step_number_stop = 0;
+int path_number_stop = 0;
+
+
+int _tmain(int argc, _TCHAR* argv[])
+{
+
+char a[3];
+beg.number = 34;   
+beg.path_number = 0;
+beg.step_number = 0;
+need.number = 70;
+
+for (int i=0;i<100;i++)
+	spisok[i] = 0;
+//-----------------------------заполнение элементов матрицы pathes нулями
+for (int i=0;i<100;i++)
+	for (int j=0;j<10000;j++)
+	{
+		pathes[i][j] = 0;
+	}
+
+pathes[0][0] = beg.number;
+//-------------------инициализация матрицы matr, описывающей клетки шахматной доски (свободна = 0, занята = 1)	
+ifstream F;
+F.open("test.txt",ios::in);
+int **matr;
+matr = new int*[8];                                   
+for (int i=0;i<8;i++)
+	matr[i] = new int[8];
+//-----------------------------заполнение элементов матрицы нулями
+for (int i=0;i<8;i++)
+	for (int j=0;j<8;j++)
+	{
+		matr[i][j] = 0;
+	}
+//-------------- заполняем клетки фигурами (для примера)
+matr[0][1] = 1;
+matr[0][5] = 1;
+matr[1][2] = 1;
+matr[1][3] = 1;
+matr[1][6] = 1;
+matr[1][7] = 1;
+matr[2][1] = 1;
+matr[2][2] = 1;
+matr[2][4] = 1;
+matr[2][6] = 1;
+matr[3][1] = 1;
+//matr[3][4] = 1;
+matr[3][5] = 1;
+matr[4][1] = 1;
+matr[4][3] = 1;
+matr[4][4] = 1;
+matr[4][5] = 1;
+matr[5][1] = 1;
+matr[5][3] = 1;
+matr[5][5] = 1;
+matr[5][6] = 1;
+matr[6][1] = 1;
+matr[6][2] = 1;
+matr[6][3] = 1;
+matr[6][4] = 1;
+matr[6][6] = 1;
+//----------------выводим на экран шахматное поле
+for (int i=0;i<8;i++)               
+	{
+		for (int j=0;j<8;j++)	
+		{
+			cout <<  matr[i][j];
+		}
+		cout << endl;
+	}
+//----------------------------------------------- построение матрицы смежности ---  начало  --------------------------------------
+
+int К_line = 10;                //  количество элементов в строке матрицы смежности
+int H = 8;
+int W = 8;
+//int matr[7][7];
+int raz = (H)*(W);
+tsmej=new int*[raz];                 // создание матрицы смежности
+for(int i=0; i<raz; i++) 
+tsmej[i]=new int[К_line];
+
+for (int i=0;i<raz;i++)              // заполняем -1
+	for (int j=0;j<К_line;j++)
+	{
+		tsmej[i][j] = -1;
+	}
+
+
+
+int k =0;                                   // заполняем саму матрицу
+for (int i=0;i<W;i++)
+	{
+		for (int j=0;j<H;j++)	
+		{
+			tsmej[k][0] = (i*10+j);
+			
+			//----- проверяем верхний элемент
+			if(i>0)
+			{
+				if(matr[i-1][j] == 0)
+					tsmej[k][1] = ((i-1)*10+j);
+			}
+			//----- проверяем нижний элемент
+			if(i<W-1)
+			{
+				if(matr[i+1][j] == 0)
+					tsmej[k][2] = (i+1)*10+j;
+			}
+			//----- проверяем левый элемент
+			if(j>0)
+			{
+				if(matr[i][j-1] == 0)
+					tsmej[k][3] = i*10+(j-1);
+			}
+			//----- проверяем правый элемент
+			if(j<H-1)
+			{
+				if(matr[i][j+1] == 0)
+					tsmej[k][4] = i*10+(j+1);
+			}
+			//----- проверяем верхний левый элемент
+			if(i>0 && j>0)
+			{
+				if(matr[i-1][j-1] == 0)
+					tsmej[k][5] = ((i-1)*10+(j-1));
+			}
+			//----- проверяем верхний правый элемент
+			if(i>0 && j<H-1)
+			{
+				if(matr[i-1][j+1] == 0)
+					tsmej[k][6] = ((i-1)*10+(j+1));
+			}
+			//----- проверяем нижний левый элемент
+			if(i<W-1 && j>0)
+			{
+				if(matr[i+1][j-1] == 0)
+					tsmej[k][7] = (i+1)*10+(j-1);
+			}
+			//----- проверяем нижний правый элемент
+			if(i<W-1 && j<H-1)
+			{
+				if(matr[i+1][j+1] == 0)
+					tsmej[k][8] = ((i+1)*10+(j+1));
+			}
+			k=k+1;
+		}
+		
+	}
+
+
+int g = 0;                   // в десятый элемент помещаем количество смежных свободных узлов
+for (int k=0;k<raz;k++)
+{
+	for (int j=1;j<К_line;j++)	
+	{
+		if(tsmej[k][j]!=-1)
+			g++;
+	}
+tsmej[k][К_line-1] = g;
+g=0;
+}
+
+for (int i=0;i<raz;i++)            // выводим матрицу смежности
+	{
+		for (int j=0;j<К_line;j++)	
+		{
+			std::cout <<  tsmej[i][j] << ' ';
+		}
+		cout << endl;
+	}
+//----------------------------------------------- построение матрицы смежности ---  конец  --------------------------------------
+
+
+
+que.push(beg);    // добавляем в очередь первый узел
+
+traverse(raz);                // запускаем обход
+
+
+for (int i=0;i<20;i++)            // выводим матрицу pathes
+	{
+		for (int j=0;j<20;j++)	
+		{
+			cout <<  pathes[i][j] << ' ';
+		}
+		cout << endl;
+	}
+
+// выводим путь
+for (int i=0;i<=step_number_stop;i++)	
+		{
+			cout <<  pathes[i][path_number_stop] << ' ';
+		}
+
+getch();
+
+}
+
+
+
+void traverse(int raz)                         // переменная k не используется в функции traverse
+{
+	
+	if(!que.empty())
+{
+	pea = que.front();                                // достаем узел из очереди, pea - текущий узел
+	que.pop();                                        // удаляем из очереди тот узел, который считали в pea
+	
+	//cout << " n= " << n << " N step= " << step_number << " N path= " << path_number << endl; 
+	cout << " pea=" << pea.number << " pea.step_number=" << pea.step_number << " pea.path_number= " << pea.path_number << " " << endl; 
+
+				  
+				  int f = 0;
+	              for (int i=0; i<raz; i++)
+	              {
+					  if(tsmej[i][0] == pea.number)   // ищем в матрице смежности элемент с нужным номером
+		              {
+					  for (int j=1; j<9; j++)                 // пробегаемся по всем смежным с ним узлам
+				      {
+						  if(tsmej[i][j]!=-1 && tsmej[i][j]!=pea.prev_us && spisok[tsmej[i][j]] == 0)              
+					        {
+								spisok[tsmej[i][j]] = 1;
+							    f = f + 1;
+								buf.path_number = pea.path_number; 
+								if (f > 1) 
+	                            {
+                                    path_number = path_number + 1;
+									buf.path_number = path_number; 
+								}
+								// формирование узла
+								buf.number = tsmej[i][j];
+								buf.prev_us = pea.number;
+								buf.step_number = pea.step_number + 1;
+								// добавляем узел в очередь
+								que.push(buf);
+								// формируем элементы матрицы путей
+								pathes[buf.step_number][buf.path_number] = buf.number; //   заполняем последний узел пути
+                                for (int k=buf.step_number-1; k>=0; k--)           //   заполняем "хвост" пути								    
+								{
+									pathes[k][buf.path_number] = pathes[k][pea.path_number];
+								}
+								if (buf.number == need.number)
+								{
+								  flag_stop = 1;
+                                  step_number_stop = buf.step_number;
+                                  path_number_stop = buf.path_number;
+								}
+					        }
+				      }
+		             break;
+		              }
+	                }
+
+
+    if (flag_stop == 1)            // проверка на наличие конца в соседних узлах
+    {
+        cout << "complete" << " step_number_stop=" << step_number_stop << " path_number_stop= " << path_number_stop << " " << endl; 
+        return;
+    }								
+	
+	n++;		
+    traverse(raz);
+}
+
+}
